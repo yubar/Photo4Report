@@ -29,7 +29,7 @@ def getCoords(dt, points, dates, threshold = timedelta(seconds = 15)):
 	else:
 		if dates[i] - dt <= threshold and dates[i] - dt <= dt - dates[i-1]: coords = points[i]
 		elif dt - dates[i-1] <= threshold: coords = points[i-1]
-		
+
 	return coords
 
 def setExifGps(exif, coords):
@@ -50,8 +50,9 @@ def setExifGps(exif, coords):
 	GpsData[3] = ("E" if coords[2]>=0 else "W").encode("ASCII")
 	GpsData[4] = dd2dms(coords[2])
 	GpsData[6] = (int(coords[3] * 1000), 1000)
+	#GpsData[16] = "T".encode("ASCII")
+	#GpsData[17] = (int(coords[4] * 1000), 1000)
 	
-	#print(GpsData)
 	exif["GPS"] = GpsData
 	
 	#print(exif)
@@ -63,11 +64,26 @@ def setExifDateTime(exif, newDate):
 	exif["Exif"][ExifDateTimeDigitized] = dtsupd
 	return exif
 
+def setExifGpsAngle(GpsData, prevGpsData, duplicateCount):
+	if GpsData != None:
+		if prevGpsData != None and GpsData[2] == prevGpsData[2] and GpsData[4] == prevGpsData[4]:
+			duplicateCount = duplicateCount + 1
+		else:
+			duplicateCount = 0
+		
+		GpsData[17] = (int(duplicateCount * 50 * 1000), 1000) #36 unique directions
+		
+	return GpsData, duplicateCount
+
 def main():
-	path = u"r:\\photo\\20190824 Камча 4\\Export_"
+	#path = u"r:\\photo\\20190824 Камча 4\\Export"
 	#path = u"r:\\photo\\20190824 Камча 4\\Export_\\pano"
 	#path = u"r:\\photo\\20190824 Камча 4\\_mi" 
-	outpath = u"r:\\photo\\20190824 Камча 4\\fnl"
+	#path = u"r:\\photo\\20190824 Камча 4\\fnl\\mapillary_copy"
+	path = u"r:\\photo\\20190824 Камча 4\\fnl\\mapillary"
+	#path = u"r:\\photo\\20190824 Камча 4\\Export\\map"
+	outpath = u"r:\\photo\\20190824 Камча 4\\fnl2map"
+	#outpath = u"r:\\photo\\20190824 Камча 4\\Export\\map2"
 	ext = u"jpg"
 	global ExifDateTimeOriginal
 	global ExifDateTimeDigitized
@@ -90,25 +106,40 @@ def main():
 	
 	os.chdir(path)
 	i = 0
+	#prevCoords = None
+	duplicateCount = 0
+	prevGpsData = None
+	
 	for file in glob.glob("*." + ext):
 		i = i + 1
 		#if i > 10: break
 		
 		exif_dict = piexif.load(file)
-		dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
-		d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
-				
-		coords = getCoords(d + delta + tzGMT, points, dates)
-		if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
+		#dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
+		#d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
 		
-		dtupd = d+delta+tzLocal
-		exif_dict = setExifDateTime(exif_dict, dtupd)
-		outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
-		logging.info(file + ' ' + str(d) + ' ' + str(d+delta+tzGMT) + ' ' + str(d+delta+tzLocal) + ' ' + str(coords))
+		#print(file + ' ' + str(exif_dict["GPS"]))
+		'''
+		coords = getCoords(d + delta + tzGMT, points, dates)
+		if coords is not None: and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
+		'''
+		
+		GpsData = exif_dict["GPS"]
+		exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
+		
+		#dtupd = d+delta+tzLocal
+		#exif_dict = setExifDateTime(exif_dict, dtupd)
+		#outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
+		outname = file
+		#logging.info(file + ' ' + str(d) + ' ' + str(d+delta+tzGMT) + ' ' + str(d+delta+tzLocal) + ' ' + str(duplicateCount) + ' ' + str(coords) + str(exif_dict["GPS"]))
+		logging.info(file + ' ' + str(duplicateCount)+ ' ' + str(exif_dict["GPS"]))
 		
 		exif_bytes = piexif.dump(exif_dict)
 		im = Image.open(file)
 		im.save(os.path.join(outpath, outname), exif=exif_bytes)
+		
+		prevGpsData = GpsData
+		#prevCoords = coords
 		
 if __name__ == "__main__":
 	main()
