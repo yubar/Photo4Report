@@ -1,3 +1,4 @@
+import argparse
 import os, glob
 import piexif
 from PIL import Image
@@ -5,6 +6,7 @@ from datetime import datetime, timedelta
 import logging
 from xml.etree import ElementTree
 from bisect import bisect_left, bisect_right
+from shutil import copyfile
 
 def parseTrack(filename):
 	tree = ElementTree.parse(filename)  
@@ -75,71 +77,87 @@ def setExifGpsAngle(GpsData, prevGpsData, duplicateCount):
 		
 	return GpsData, duplicateCount
 
-def main():
-	#path = u"r:\\photo\\20190824 Камча 4\\Export"
-	#path = u"r:\\photo\\20190824 Камча 4\\Export_\\pano"
-	#path = u"r:\\photo\\20190824 Камча 4\\_mi" 
-	#path = u"r:\\photo\\20190824 Камча 4\\fnl\\mapillary_copy"
-	path = u"r:\\photo\\20190824 Камча 4\\fnl\\mapillary"
-	#path = u"r:\\photo\\20190824 Камча 4\\Export\\map"
-	outpath = u"r:\\photo\\20190824 Камча 4\\fnl2map"
-	#outpath = u"r:\\photo\\20190824 Камча 4\\Export\\map2"
-	ext = u"jpg"
+def processImages(args):
 	global ExifDateTimeOriginal
 	global ExifDateTimeDigitized
 	ExifDateTimeOriginal = 36867
 	ExifDateTimeDigitized = 36868
+
+	delta = timedelta(seconds=args.delta)
+	tzGMT = -timedelta(hours=args.tzPhoto)
+	tzLocal = timedelta(hours=args.tzLocal)
 	
-	trackFileName = u'r:\\Projects\\Phototools\\Fact_raw.gpx'
-	
-	#delta = timedelta(seconds=0)
-	#tzGMT = -timedelta(hours=12)
-	#tzLocal = timedelta(hours=0)
-	
-	delta = -timedelta(minutes=7, seconds=18)
-	tzGMT = -timedelta(hours=3)
-	tzLocal = timedelta(hours=9)
+	print(delta, tzGMT, tzLocal)
 	
 	logging.basicConfig(filename="log.txt", level=logging.DEBUG, filemode="w")
 	
-	points, dates = parseTrack(trackFileName)
+	if ('updategeo' in args.actions):
+		points, dates = parseTrack(args.track)
 	
-	os.chdir(path)
+	os.chdir(args.input)
+	
 	i = 0
 	#prevCoords = None
 	duplicateCount = 0
 	prevGpsData = None
 	
-	for file in glob.glob("*." + ext):
+	for file in glob.glob("*." + args.ext):
 		i = i + 1
 		#if i > 10: break
-		
+
 		exif_dict = piexif.load(file)
-		#dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
-		#d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
+		dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
+		d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
+		dtupd = d
+
+		logstr = file + ' ' + str(d)
 		
-		#print(file + ' ' + str(exif_dict["GPS"]))
-		'''
-		coords = getCoords(d + delta + tzGMT, points, dates)
-		if coords is not None: and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
-		'''
+		if 'updatetime' in args.actions:
+			dtupd = d+delta+tzLocal
+			exif_dict = setExifDateTime(exif_dict, dtupd)
+			logstr = logstr + ' ' + str(dtupd)
+			
+		if 'updategeo' in args.actions:
+			coords = getCoords(d + delta + tzGMT, points, dates)
+			if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
+			GpsData = exif_dict["GPS"]
+			exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
+			logstr = logstr + ' ' + str(duplicateCount) + ' ' + str(coords) + str(exif_dict["GPS"])
 		
-		GpsData = exif_dict["GPS"]
-		exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
-		
-		#dtupd = d+delta+tzLocal
-		#exif_dict = setExifDateTime(exif_dict, dtupd)
-		#outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
 		outname = file
-		#logging.info(file + ' ' + str(d) + ' ' + str(d+delta+tzGMT) + ' ' + str(d+delta+tzLocal) + ' ' + str(duplicateCount) + ' ' + str(coords) + str(exif_dict["GPS"]))
-		logging.info(file + ' ' + str(duplicateCount)+ ' ' + str(exif_dict["GPS"]))
-		
-		exif_bytes = piexif.dump(exif_dict)
-		im = Image.open(file)
-		im.save(os.path.join(outpath, outname), exif=exif_bytes)
-		
-		prevGpsData = GpsData
-		#prevCoords = coords
-		
+		if 'rename' in args.actions:
+			outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
+
+		if 'updategeo' in args.actions or 'updatetime' in args.actions:
+			print('copying ' + file + ' to ' + os.path.join(args.output, outname))
+			exif_bytes = piexif.dump(exif_dict)
+			im = Image.open(file)
+			im.save(os.path.join(args.output, outname), exif=exif_bytes)
+			if 'updategeo' in args.actions: 
+				prevGpsData = GpsData
+				
+		elif 'rename' in args.actions:
+			print('copying ' + file + ' to ' + os.path.join(args.output, outname))
+			copyfile(file, os.path.join(args.output, outname))
+			
+		logging.info(logstr)
+
+
+def main():
+	parser = argparse.ArgumentParser(description='Make some operations on photos')
+	parser.add_argument('-i', '--input', dest='input', help='input folder', default='')
+	parser.add_argument('-o', '--output', dest='output', help='output folder', default='')
+	parser.add_argument('-e', '--ext', dest='ext', help='file extension', default='jpg')
+	parser.add_argument('-t', '--track', dest='track', help='path and filename of GPX track', default='track.gpx')
+	parser.add_argument('-d', '--delta', dest='delta', help='time difference between GPX and photo timestamps in seconds, ignoring timezone', default=0, type=int)
+	parser.add_argument('-z', '--tzLocal', dest='tzLocal', help='local timezone', default=0, type=int)
+	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone', default=0, type=int)
+	parser.add_argument('-a', '--action', dest='actions', nargs='+', help='Actions: updatetime rename updategeo ')
+	
+	args = parser.parse_args()
+
+	processImages(args)
+	
+	
 if __name__ == "__main__":
 	main()
