@@ -84,10 +84,8 @@ def processImages(args):
 	ExifDateTimeDigitized = 36868
 
 	delta = timedelta(seconds=args.delta)
-	tzGMT = -timedelta(hours=args.tzPhoto)
+	tzGMT = timedelta(hours=args.tzPhoto)
 	tzLocal = timedelta(hours=args.tzLocal)
-	
-	print(delta, tzGMT, tzLocal)
 	
 	logging.basicConfig(filename="log.txt", level=logging.DEBUG, filemode="w")
 	
@@ -97,13 +95,12 @@ def processImages(args):
 	os.chdir(args.input)
 	
 	i = 0
-	#prevCoords = None
 	duplicateCount = 0
 	prevGpsData = None
 	
 	for file in glob.glob("*." + args.ext):
 		i = i + 1
-		#if i > 10: break
+		if args.top > 0 and i > args.top: break
 
 		exif_dict = piexif.load(file)
 		dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
@@ -113,12 +110,12 @@ def processImages(args):
 		logstr = file + ' ' + str(d)
 		
 		if 'updatetime' in args.actions:
-			dtupd = d+delta+tzLocal
+			dtupd = d + delta + tzLocal - tzGMT
 			exif_dict = setExifDateTime(exif_dict, dtupd)
 			logstr = logstr + ' ' + str(dtupd)
 			
 		if 'updategeo' in args.actions:
-			coords = getCoords(d + delta + tzGMT, points, dates)
+			coords = getCoords(d + delta - tzGMT, points, dates)
 			if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
 			GpsData = exif_dict["GPS"]
 			exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
@@ -150,9 +147,10 @@ def main():
 	parser.add_argument('-e', '--ext', dest='ext', help='file extension', default='jpg')
 	parser.add_argument('-t', '--track', dest='track', help='path and filename of GPX track', default='track.gpx')
 	parser.add_argument('-d', '--delta', dest='delta', help='time difference between GPX and photo timestamps in seconds, ignoring timezone', default=0, type=int)
-	parser.add_argument('-z', '--tzLocal', dest='tzLocal', help='local timezone', default=0, type=int)
-	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone', default=0, type=int)
+	parser.add_argument('-z', '--tzLocal', dest='tzLocal', help='local timezone, hours from UTC', default=0, type=int)
+	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone, hours from UTC', default=0, type=int)
 	parser.add_argument('-a', '--action', dest='actions', nargs='+', help='Actions: updatetime rename updategeo ')
+	parser.add_argument('--top', dest='top', help='Only process first [top] files', default=0, type=int)
 	
 	args = parser.parse_args()
 
