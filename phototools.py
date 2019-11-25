@@ -9,6 +9,8 @@ from bisect import bisect_left, bisect_right
 from shutil import copyfile
 
 def parseTrack(filename):
+	start = datetime.now()
+	print("Parsing gpx... ", end="")
 	tree = ElementTree.parse(filename)  
 	ns = {"x":"http://www.topografix.com/GPX/1/1"}
 	pts = tree.findall("x:trk[1]/x:trkseg[1]/x:trkpt", ns)
@@ -19,6 +21,7 @@ def parseTrack(filename):
 		, float(pt.find('x:ele', ns).text))
 		for pt in pts]
 	dates = [x[0] for x in points]
+	print("Completed in " + str(datetime.now()-start))
 	return points, dates
 	
 def getCoords(dt, points, dates, threshold = timedelta(seconds = 15)):
@@ -98,10 +101,17 @@ def processImages(args):
 	duplicateCount = 0
 	prevGpsData = None
 	
-	for file in glob.glob("*." + args.ext):
+	files = glob.glob("*." + args.ext)
+
+	num = len(files) if args.top == 0 else min(args.top, len(files))
+	start = datetime.now()
+	
+	for file in files:
 		i = i + 1
 		if args.top > 0 and i > args.top: break
-
+		
+		if i%10 == 0: print("\rProcessing files: " + str(i) + " of " + str(num) + '...', end='')
+		
 		exif_dict = piexif.load(file)
 		dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
 		d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
@@ -110,26 +120,32 @@ def processImages(args):
 		logstr = file + ' ' + str(d)
 		
 		if 'updatetime' in args.actions:
-			dtupd = d + delta + tzLocal - tzGMT
+			dtupd = d - tzGMT + delta + tzLocal
 			exif_dict = setExifDateTime(exif_dict, dtupd)
 			logstr = logstr + ' ' + str(dtupd)
 			
 		if 'updategeo' in args.actions:
-			coords = getCoords(dtupd, points, dates)
+			coords = getCoords(dtupd - tzLocal, points, dates, timedelta(seconds = args.threshold))
 			if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
 			GpsData = exif_dict["GPS"]
 			exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
 			logstr = logstr + ' ' + str(duplicateCount) + ' ' + str(coords) + str(exif_dict["GPS"])
 		
+		if 'cleangeo' in args.actions:
+			exif_dict["GPS"] = {}
+			logstr = logstr + ' geodata erased' 
+		
 		outname = file
 		if 'rename' in args.actions:
 			outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
 
-		if 'updategeo' in args.actions or 'updatetime' in args.actions:
-			#print('copying ' + file + ' to ' + os.path.join(args.output, outname))
-			exif_bytes = piexif.dump(exif_dict)
-			im = Image.open(file)
-			im.save(os.path.join(args.output, outname), exif=exif_bytes, subsampling=args.subsampling, quality=args.quality)
+		if 'updategeo' in args.actions or 'cleangeo' in args.actions or 'updatetime' in args.actions:
+
+			if not args.onlygeo or exif_dict["GPS"]:
+				exif_bytes = piexif.dump(exif_dict)
+				im = Image.open(file)
+				im.save(os.path.join(args.output, outname), exif=exif_bytes, subsampling=args.subsampling, quality=args.quality)
+
 			if 'updategeo' in args.actions: 
 				prevGpsData = GpsData
 				
@@ -138,6 +154,9 @@ def processImages(args):
 			copyfile(file, os.path.join(args.output, outname))
 			
 		logging.info(logstr)
+		
+	print("\rProcessing files: " + str(i-1) + " of " + str(num) + '... Completed in ' + str(datetime.now()-start))
+
 
 
 def main():
@@ -151,8 +170,10 @@ def main():
 	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone, hours from UTC', default=0, type=int)
 	parser.add_argument('-a', '--action', dest='actions', nargs='+', help='Actions: updatetime rename updategeo ')
 	parser.add_argument('--top', dest='top', help='Only process first [top] files', default=0, type=int)
+	parser.add_argument('--threshold', dest='threshold', help='Max difference between shooting time and gpx point to assign coords, seconds', default=15, type=int)
 	parser.add_argument('--subsampling', dest='subsampling', help='JPEG chroma subsampling', default=0, type=int)
 	parser.add_argument('--quality', dest='quality', help='JPEG quality', default=85, type=int)
+	parser.add_argument('--onlygeo', dest='onlygeo', help='Copy only geotagged files to output folder', default=False, action='store_true')
 	
 	args = parser.parse_args()
 
