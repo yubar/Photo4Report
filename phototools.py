@@ -115,7 +115,7 @@ def processImages(args):
 			logstr = logstr + ' ' + str(dtupd)
 			
 		if 'updategeo' in args.actions:
-			coords = getCoords(d + delta - tzGMT, points, dates)
+			coords = getCoords(dtupd, points, dates)
 			if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
 			GpsData = exif_dict["GPS"]
 			exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
