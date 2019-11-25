@@ -67,8 +67,8 @@ def setExifDateTime(exif, newDate):
 	return exif
 
 def setExifGpsAngle(GpsData, prevGpsData, duplicateCount):
-	if GpsData != None:
-		if prevGpsData != None and GpsData[2] == prevGpsData[2] and GpsData[4] == prevGpsData[4]:
+	if GpsData:
+		if prevGpsData and GpsData[2] == prevGpsData[2] and GpsData[4] == prevGpsData[4]:
 			duplicateCount = duplicateCount + 1
 		else:
 			duplicateCount = 0
@@ -126,15 +126,15 @@ def processImages(args):
 			outname = dtupd.strftime("%Y%m%d_%H%M%S_") + file
 
 		if 'updategeo' in args.actions or 'updatetime' in args.actions:
-			print('copying ' + file + ' to ' + os.path.join(args.output, outname))
+			#print('copying ' + file + ' to ' + os.path.join(args.output, outname))
 			exif_bytes = piexif.dump(exif_dict)
 			im = Image.open(file)
-			im.save(os.path.join(args.output, outname), exif=exif_bytes)
+			im.save(os.path.join(args.output, outname), exif=exif_bytes, subsampling=args.subsampling, quality=args.quality)
 			if 'updategeo' in args.actions: 
 				prevGpsData = GpsData
 				
 		elif 'rename' in args.actions:
-			print('copying ' + file + ' to ' + os.path.join(args.output, outname))
+			#print('copying ' + file + ' to ' + os.path.join(args.output, outname))
 			copyfile(file, os.path.join(args.output, outname))
 			
 		logging.info(logstr)
@@ -151,6 +151,8 @@ def main():
 	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone, hours from UTC', default=0, type=int)
 	parser.add_argument('-a', '--action', dest='actions', nargs='+', help='Actions: updatetime rename updategeo ')
 	parser.add_argument('--top', dest='top', help='Only process first [top] files', default=0, type=int)
+	parser.add_argument('--subsampling', dest='subsampling', help='JPEG chroma subsampling', default=0, type=int)
+	parser.add_argument('--quality', dest='quality', help='JPEG quality', default=85, type=int)
 	
 	args = parser.parse_args()
 
