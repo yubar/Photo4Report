@@ -54,7 +54,7 @@ def setExifGps(exif, coords):
 	GpsData[2] = dd2dms(coords[1])
 	GpsData[3] = ("E" if coords[2]>=0 else "W").encode("ASCII")
 	GpsData[4] = dd2dms(coords[2])
-	GpsData[6] = (int(coords[3] * 1000), 1000)
+	GpsData[6] = (int((coords[3] if coords[3]>0 else 0) * 1000), 1000)
 	#GpsData[16] = "T".encode("ASCII")
 	#GpsData[17] = (int(coords[4] * 1000), 1000)
 	
@@ -186,7 +186,7 @@ def main():
 	parser.add_argument('--onlygeo', dest='onlygeo', help='Copy only geotagged files to output folder', default=False, action='store_true')
 	
 	args = parser.parse_args()
-
+	
 	processImages(args)
 	
 	
