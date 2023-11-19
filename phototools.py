@@ -87,8 +87,8 @@ def processImages(args):
 	ExifDateTimeDigitized = 36868
 
 	delta = timedelta(seconds=args.delta)
-	tzGMT = timedelta(hours=args.tzPhoto)
-	tzLocal = timedelta(hours=args.tzLocal)
+	tzPhotoFromGMT = timedelta(hours=args.tzPhoto)
+	tzTargetFromGMT = timedelta(hours=args.tzTarget)
 	
 	logging.basicConfig(filename="log.txt", level=logging.DEBUG, filemode="w")
 	
@@ -106,6 +106,9 @@ def processImages(args):
 	num = len(files) if args.top == 0 else min(args.top, len(files))
 	start = datetime.now()
 	
+	dayno = 0
+	prevdate = start
+	
 	for file in files:
 		i = i + 1
 		if args.top > 0 and i > args.top: break
@@ -115,17 +118,22 @@ def processImages(args):
 		exif_dict = piexif.load(file)
 		dts = exif_dict["Exif"][ExifDateTimeOriginal].decode("ASCII")
 		d = datetime.strptime(dts,"%Y:%m:%d %H:%M:%S")
-		dtupd = d
-
+		dtupd = d - tzPhotoFromGMT + delta + tzTargetFromGMT
+		
+		if dayno == 0:
+			dayno = 1
+			prevdate = dtupd.date()
+		elif (dtupd.date()-prevdate).days > 0:
+			dayno = dayno + (dtupd.date()-prevdate).days
+			prevdate = dtupd.date()
 		logstr = file + ' ' + str(d)
 		
 		if 'updatetime' in args.actions:
-			dtupd = d - tzGMT + delta + tzLocal
 			exif_dict = setExifDateTime(exif_dict, dtupd)
 			logstr = logstr + ' ' + str(dtupd)
 			
 		if 'updategeo' in args.actions:
-			coords = getCoords(dtupd - tzLocal, points, dates, timedelta(seconds = args.threshold))
+			coords = getCoords(dtupd - tzTargetFromGMT, points, dates, timedelta(seconds = args.threshold))
 			if coords is not None and not (2 in exif_dict["GPS"]): exif_dict = setExifGps(exif_dict, coords)
 			GpsData = exif_dict["GPS"]
 			exif_dict["GPS"], duplicateCount = setExifGpsAngle(GpsData, prevGpsData, duplicateCount)
@@ -150,12 +158,14 @@ def processImages(args):
 				prevGpsData = GpsData
 				
 		elif 'rename' in args.actions:
+			outname = f'{dayno:02d}' + '_' + outname
+			#logstr = logstr + ' ' + outname
 			#print('copying ' + file + ' to ' + os.path.join(args.output, outname))
-			copyfile(file, os.path.join(args.output, outname))
+			copyfile(file, os.path.join(args.output, outname ))
 			
 		logging.info(logstr)
 		
-	print("\rProcessing files: " + str(i-1) + " of " + str(num) + '... Completed in ' + str(datetime.now()-start))
+	print("\rProcessing files: " + str(i) + " of " + str(num) + '... Completed in ' + str(datetime.now()-start))
 
 
 
@@ -166,7 +176,7 @@ def main():
 	parser.add_argument('-e', '--ext', dest='ext', help='file extension', default='jpg')
 	parser.add_argument('-t', '--track', dest='track', help='path and filename of GPX track', default='track.gpx')
 	parser.add_argument('-d', '--delta', dest='delta', help='time difference between GPX and photo timestamps in seconds, ignoring timezone', default=0, type=int)
-	parser.add_argument('-z', '--tzLocal', dest='tzLocal', help='local timezone, hours from UTC', default=0, type=int)
+	parser.add_argument('-z', '--tzTarget', dest='tzTarget', help='target timezone, hours from UTC', default=0, type=int)
 	parser.add_argument('-y', '--tzPhoto', dest='tzPhoto', help='photos timestamp timezone, hours from UTC', default=0, type=int)
 	parser.add_argument('-a', '--action', dest='actions', nargs='+', help='Actions: updatetime rename updategeo ')
 	parser.add_argument('--top', dest='top', help='Only process first [top] files', default=0, type=int)
